@@ -6,9 +6,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,9 +20,15 @@
 __author__ = 'sstuart@google.com (Stephen Stuart)'
 __version__ = '4.0'
 
+import math
+
+# In general, see RFC4271 for details.
+#
+# The length of the fixed header part of a BGP message.
+#
 HEADER_LEN = 19
 
-# message types
+# Message types.
 #
 OPEN = 1
 UPDATE = 2
@@ -33,7 +39,7 @@ MSG_TYPE_STR = {OPEN: 'OPEN',
                 NOTIFICATION: 'NOTIFICATION',
                 KEEPALIVE: 'KEEPALIVE'}
 
-# attribute types
+# Attribute types.
 #
 ATTR_TYPE_ORIGIN = 1
 ATTR_TYPE_AS_PATH = 2
@@ -71,14 +77,14 @@ ATTR_TYPE_STR = {ATTR_TYPE_ORIGIN: 'ORIGIN',
                  ATTR_TYPE_AS4_PATH: 'AS4_PATH',
                  ATTR_TYPE_AS4_AGGREGATOR: 'AS4_AGGREGATOR'}
 
-# attribute flag values
+# Attribute flag values.
 #
 ATTR_FLAG_OPTIONAL = 128
 ATTR_FLAG_TRANSITIVE = 64
 ATTR_FLAG_PARTIAL = 32
 ATTR_FLAG_EXT_LEN = 16
 
-# ORIGIN values
+# Values for the ORIGIN attribute.
 #
 ORIGIN_IGP = 0
 ORIGIN_EGP = 1
@@ -87,7 +93,7 @@ ORIGIN_STR = {ORIGIN_IGP: 'IGP',
               ORIGIN_EGP: 'EGP',
               ORIGIN_INCOMPLETE: 'incomplete'}
 
-# AS_PATH path segment type codes
+# AS_PATH attribute path segment type codes.
 #
 AS_SET = 1
 AS_SEQUENCE = 2
@@ -102,7 +108,7 @@ AS_PATH_SEG_FORMAT = {AS_SET: '{ %s }',
                       AS_CONFED_SET: '( %s )',
                       AS_CONFED_SEQUENCE: '( %s )'}
 
-# NOTIFICATION codes
+# NOTIFICATION codes.
 #
 MESSAGE_HEADER_ERROR = 1
 OPEN_MESSAGE_ERROR = 2
@@ -117,20 +123,28 @@ NOTIFICATION_STR = {MESSAGE_HEADER_ERROR: 'MESSAGE_HEADER_ERROR',
                     FINITE_STATE_MACHINE_ERROR: 'FINITE_STATE_MACHINE_ERROR',
                     CEASE: 'CEASE'}
 
-# well-known communities
+# Well-known community values.
 #
 WELL_KNOWN_COMM = {0xFFFFFF01: 'NO_EXPORT',
                    0xFFFFFF02: 'NO_ADVERTISE',
                    0xFFFFFF03: 'NO_EXPORT_SUBCONFED'}
 
-# address families
+# Address families, per RFC1700.
 #
 AF_IP = 1
 AF_IP6 = 2
+AF_STR = {AF_IP: 'IPv4',
+          AF_IP6: 'IPv6'}
+
+# Multiprotocol Subsequent Address Family Identifier (SAFI) per RFC2858.
+#
+MP_SAFI_STR = {1: 'unicast',
+               2: 'multicast',
+               3: 'unicast+multicast'}
 
 
-# function to determine the number of bytes necessary to represent a
-# prefix of length 'len' per RFC4271
+# A function to determine the number of bytes necessary to represent a
+# prefix of length 'len' per RFC4271.
 #
 def BytesForPrefix(prefix_len):
   """Determine the number of octets required to hold a prefix of length.
@@ -140,41 +154,35 @@ def BytesForPrefix(prefix_len):
 
   Returns:
     An int indicating how many octets are used to hold the prefix.
+
+  Raises:
+    ValueError: indicates that prefix_len has an invalid value
   """
 
-  retval = 0
-  if prefix_len <= 8:
-    retval = 1
-  elif prefix_len <= 16:
-    retval = 2
-  elif prefix_len <= 24:
-    retval = 3
-  elif prefix_len <= 32:
-    retval = 4
-  elif prefix_len <= 40:
-    retval = 5
-  elif prefix_len <= 48:
-    retval = 6
-  elif prefix_len <= 56:
-    retval = 7
-  elif prefix_len <= 64:
-    retval = 8
-  elif prefix_len <= 72:
-    retval = 9
-  elif prefix_len <= 80:
-    retval = 10
-  elif prefix_len <= 88:
-    retval = 11
-  elif prefix_len <= 96:
-    retval = 12
-  elif prefix_len <= 104:
-    retval = 13
-  elif prefix_len <= 112:
-    retval = 14
-  elif prefix_len <= 120:
-    retval = 15
-  elif prefix_len <= 128:
-    retval = 16
-  else:
-    assert prefix_len <= 128
-  return retval
+  if prefix_len < 1 or prefix_len > 128:
+    raise ValueError('prefix_len is out of range')
+  return int(math.ceil(prefix_len / 8.0))
+
+
+# A function to determine the number of bytes necessary to represent an
+# SNPA of length 'len' per RFC2858.
+#
+def BytesForSnpa(snpa_len):
+  """Determine the number of octets required to hold an SNPA.
+
+  Args:
+    snpa_len: length of the SNPA in semi-octets.
+
+  Returns:
+    An int indicating how many octets are used to hold the prefix.
+
+  Raises:
+    ValueError: indicates that snpa_len has an invalid value
+  """
+
+  # You have to read RFC2858 to believe this. SNPA lengths are expressed
+  # in semi-octets.
+  #
+  if snpa_len < 1 or snpa_len > 256:
+    raise ValueError('snpa_len is out of range')
+  return int(math.ceil(snpa_len / 2.0))
