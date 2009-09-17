@@ -20,6 +20,11 @@
 __author__ = "sstuart@google.com (Stephen Stuart)"
 __version__ = "0.1"
 
+import socket
+import struct
+import time
+import indent
+
 # The length of the fixed header part of a BMP message.
 #
 HEADER_LEN = 44
@@ -64,6 +69,64 @@ PEER_DOWN_REASON_STR = {1: "Local system closed session, notification sent",
                         4: "Remote system closed session, no notification"}
 
 
+def ParseBmpHeader(header, verbose=False):
+  """Parse a BMP header.
+
+  Args:
+    header: array containing BMP message header.
+    verbose: be chatty, or not.
+
+  Returns:
+    An int indicating the type of message that follows the header,
+    and a list of strings to print.
+
+  Raises:
+    ValueError: an unexpected value was found in the message
+  """
+
+  # Initialize.
+  #
+  indent_str = indent.IndentLevel(indent.BMP_HEADER_INDENT)
+  print_msg = []
+
+  # Unpack.
+  #
+  version, msg_type, peer_type, peer_flags = struct.unpack(">BBBB",
+                                                           header[0:4])
+  if peer_flags & PEER_FLAG_IPV6:
+    peer_address = socket.inet_ntop(socket.AF_INET6, header[12:28])
+  else:
+    peer_address = socket.inet_ntop(socket.AF_INET, header[24:28])
+  peer_as, time_sec = struct.unpack(">LxxxxL",
+                                    header[28:40])
+
+  # If we have a version mismatch, we're pretty much done here.
+  #
+  if version != VERSION:
+    raise ValueError("Found BMP version %d, expecting %d" % (version,
+                                                             VERSION))
+
+  # Decide what to format as text
+  #
+  print_msg.append("%sBMP version %d type %s peer %s AS %d\n" %
+                   (indent_str,
+                    version,
+                    MSG_TYPE_STR[msg_type],
+                    peer_address,
+                    peer_as))
+  if verbose:
+    print_msg.append("%speer_type %s" % (indent_str,
+                                         PEER_TYPE_STR[peer_type]))
+    print_msg.append(" peer_flags 0x%x" % peer_flags)
+    print_msg.append(" router_id %s\n" % socket.inet_ntoa(header[32:36]))
+    print_msg.append("%stime %s\n" % (indent_str, time.ctime(time_sec)))
+
+  # Return the message type so the caller can decide what to do next,
+  # and the list of strings representing the collected message.
+  #
+  return msg_type, print_msg
+
+
 # A function indication whether or not a BMP Peer Down message comes
 # with a BGP notification
 #
@@ -77,7 +140,4 @@ def PeerDownHasBgpNotification(reason):
     True if there will be a BGP Notification, False if not
   """
 
-  if reason == 1 or reason == 3:
-    return True
-  return False
-
+  return reason == 1 or reason == 3
