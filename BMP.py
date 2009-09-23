@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+#!/usr/bin/python2.5  # pylint: disable-msg=C6301,C6409
 #
 # Copyright 2009 Google Inc.
 # All Rights Reserved.
