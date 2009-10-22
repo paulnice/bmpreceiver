@@ -214,6 +214,24 @@ def BytesForSnpa(snpa_len):
   return int(math.ceil(snpa_len / 2.0))
 
 
+def DumpHexString(buff, start, length):
+  """Convert hex data to text.
+
+  Args:
+    buff: a buffer of hex data to convert to text.
+    start: starting offset of data to convert.
+    length: length of data to convert.
+
+  Returns:
+    String of text.
+  """
+
+  hex_dump = []
+  for x in range(length):
+    hex_dump.append("%02x" % struct.unpack_from("B", buff, x + start))
+  return " ".join(hex_dump)
+
+
 def ParseBgpAsPath(update, start, end, rfc4893_updates):
   """Parse BGP AS_PATH path attribute information into text per RFC4271.
 
@@ -227,8 +245,6 @@ def ParseBgpAsPath(update, start, end, rfc4893_updates):
     A list of strings containing the text representation of the path attribute.
   """
 
-  # Initialize.
-  #
   path_text = []
 
   # We're going to try this with the default value of rfc4893_updates,
@@ -236,8 +252,6 @@ def ParseBgpAsPath(update, start, end, rfc4893_updates):
   #
   try:
 
-    # Start at the beginning ...
-    #
     offset = start
 
     # Walk through the path segments.
@@ -301,8 +315,6 @@ def ParseBgpCommunities(update, start, end):
     A list of strings containing the text representation of the path attribute.
   """
 
-  # Initialize.
-  #
   comm_text = []
   offset = start
 
@@ -381,10 +393,7 @@ def ParseBgpHeader(header, verbose=False):
   #
   except Exception, esc:
     if verbose:
-      hex_dump = []
-      for x in range(HEADER_LEN):
-        hex_dump.append("%02x" % struct.unpack_from("B", header, x))
-        print " ".join(hex_dump)
+      print DumpHexString(header, 0, HEADER_LEN)
     raise esc
 
 
@@ -401,8 +410,6 @@ def ParseBgpMpAttr(update, start, end, has_snpa):
     A list of strings containing the text representation of the attribute.
   """
 
-  # Initialize.
-  #
   mpattr_text = []
   offset = start
 
@@ -413,12 +420,9 @@ def ParseBgpMpAttr(update, start, end, has_snpa):
 
   # NEXT_HOP depends on length of next hop.
   #
-  unused_socket_afi = 0
   if afi == AF_IP:
-    unused_socket_afi = socket.AF_INET
     next_hop = socket.inet_ntop(socket.AF_INET, update[offset:offset+4])
   elif afi == AF_IP6:
-    unused_socket_afi = socket.AF_INET6
     next_hop = socket.inet_ntop(socket.AF_INET6,
                                 update[offset:offset+16])
   else:
@@ -462,12 +466,9 @@ def ParseBgpMpAttr(update, start, end, has_snpa):
       # You have to read RFC2858 to believe this.
       #
       snpa_len_octets = BytesForSnpa(snpa_len)
-      snpa_dump = []
-      for y in range(snpa_len_octets):
-        snpa_dump.append("0x%x" % struct.unpack_from(">B",
-                                                     update,
-                                                     offset + y))
-      mpattr_text.append("SNPA %s\n" % " ".join(snpa_dump))
+      mpattr_text.append("SNPA %s\n" % DumpHexString(update,
+                                                     offset,
+                                                     snpa_len_octets))
       offset += snpa_len_octets
 
   # Next section is NLRI information.
@@ -498,12 +499,10 @@ def ParseBgpNlri(update, start, end, afi, debug=False):
     ValueError: unexpected value found for AFI.
   """
 
-  # Initialize.
-  #
   nlri_text = []
   offset = start
 
-  # While there's data left to parse ...
+  # Walk through NLRI values
   #
   while offset < end:
 
@@ -595,8 +594,7 @@ def ParseBgpNotification(notification, length, verbose=False):
   #
   if length > 2 and verbose:
     print_msg.append("%sNOTIFICATION data " % indent_str)
-    for x in range(3, length - 1):
-      print_msg.append(" 0x%x" % notification[x])
+    print_msg.append(DumpHexString(notification, 3, length - 1))
     print_msg.append("\n")
 
   # Return the list of strings representing collected message.

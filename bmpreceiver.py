@@ -76,14 +76,9 @@ def CollectBmpPeerDown(sock, verbose=False):
     ValueError: an unexpected value was found in the message
   """
 
-  # Initialize.
-  #
   indent_str = indent.IndentLevel(indent.BMP_CONTENT_INDENT)
   print_msg = []
 
-  # Get the reason code for the peer down message, and decide what to
-  # based on its value.
-  #
   reason_code = CollectBytes(sock, 1)[0]
   if reason_code in BMP.PEER_DOWN_REASON_STR:
     print_msg.append("%s%s\n" % (indent_str,
@@ -127,8 +122,6 @@ def CollectBmpStatsMsg(sock):
     A list of strings.
   """
 
-  # Initialize.
-  #
   print_msg = []
   indent_str = indent.IndentLevel(indent.BMP_CONTENT_INDENT)
 

@@ -84,13 +84,9 @@ def ParseBmpHeader(header, verbose=False):
     ValueError: an unexpected value was found in the message
   """
 
-  # Initialize.
-  #
   indent_str = indent.IndentLevel(indent.BMP_HEADER_INDENT)
   print_msg = []
 
-  # Unpack.
-  #
   version, msg_type, peer_type, peer_flags = struct.unpack(">BBBB",
                                                            header[0:4])
   if peer_flags & PEER_FLAG_IPV6:
