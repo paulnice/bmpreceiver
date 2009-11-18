@@ -25,10 +25,10 @@ rfc2858.txt
 rfc4271.txt
 rfc4893.txt
 
-Test files: these are test files suitable for feeding to
+Test files: You can make test files suitable for feeding to
 bmp-receiver.py's "-f" switch to test that the receiver is working.
+The "nc" utility can be used to do this (assuming that 20000 is the
+port number configured on the Juniper):
 
-testcase1.bin
-testcase2.bin
-testcase3.bin
-testcase4.bin
+    nc -l 20000 > testcase.bin
+
