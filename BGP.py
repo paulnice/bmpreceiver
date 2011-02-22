@@ -188,7 +188,7 @@ def BytesForPrefix(prefix_len):
     ValueError: indicates that prefix_len has an invalid value
   """
 
-  if prefix_len < 1 or prefix_len > 128:
+  if prefix_len < 0 or prefix_len > 128:
     raise ValueError("prefix_len %d is out of range" % prefix_len)
   return int(math.ceil(prefix_len / 8.0))
 
@@ -290,15 +290,12 @@ def ParseBgpAsPath(update, start, end, rfc4893_updates):
       path_text.append(AS_PATH_SEG_FORMAT[path_seg_type] % path_seg_str)
 
   # If we get a KeyError exception and the rfc4893_updates flag is not
-  # set, try again with rfc4893_updates set; else reraise the exception.
+  # set, tell the user to try using the rfc4893 switch; reraise the exception.
   #
   except KeyError, esc:
     if not rfc4893_updates:
-      sys.stderr.write("ParseBgpAsPath setting -4 due to parsing error\n")
-      rfc4893_updates += 1
-      path_text = []
-    else:
-      raise esc
+      sys.stderr.write("ParseBgpAsPath parsing error, try --rfc4893 switch\n")
+    raise esc
 
   return path_text
 

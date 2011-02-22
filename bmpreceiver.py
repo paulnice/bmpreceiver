@@ -255,12 +255,15 @@ def main(argv):
   #
   try:
     opts, args = getopt.getopt(argv,
-                               "dv4p:f:",
+                               "dv24p:f:c:s:",
                                ["debug",
                                 "verbose",
+                                "norfc4893",
                                 "rfc4893",
                                 "port=",
-                                "file="])
+                                "file=",
+                                "count=",
+                                "skip="])
   except getopt.GetoptError:
     Usage()
     sys.exit(2)
@@ -270,7 +273,9 @@ def main(argv):
     sys.exit(2)
 
   port = PORT
-  rfc4893_updates = False
+  count_updates = 0
+  skip_updates = 0
+  rfc4893_updates = True
   verbose_flag = False
   record_file = ""
   for o, a in opts:
@@ -278,12 +283,18 @@ def main(argv):
       port = int(a)
     elif o in ("-f", "--file"):
       record_file = a
+    elif o in ("-2", "--norfc4893"):
+      rfc4893_updates = False
     elif o in ("-4", "--rfc4893"):
       rfc4893_updates = True
     elif o in ("-d", "--debug"):
       DEBUG_FLAG += 1
     elif o in ("-v", "--verbose"):
       verbose_flag = True
+    elif o in ("-c", "--count"):
+      count_updates = int(a)
+    elif o in ("-s", "--skip"):
+      skip_updates = int(a)
     else:
       raise ValueError("unhandled option")
 
@@ -328,8 +339,8 @@ def main(argv):
       # Read a BMP header.
       #
       header = CollectBytes(conn, BMP.HEADER_LEN)
-      msg_type, msg_text = BMP.ParseBmpHeader(header, verbose=verbose_flag)
-      print "".join(msg_text),
+      msg_type, tmp_text = BMP.ParseBmpHeader(header, verbose=verbose_flag)
+      msg_text = "".join(tmp_text)
 
       # Process the specific type of BMP message
       #
@@ -345,30 +356,30 @@ def main(argv):
         length, msg_type, hdr_text = BGP.ParseBgpHeader(header,
                                                         verbose=verbose_flag)
         assert msg_type == BGP.UPDATE
-        msg_text.append("".join(hdr_text))
+        msg_text += "".join(hdr_text)
 
         # Collect and parse the BGP message body.
         #
         update = CollectBytes(conn, length)
         try:
-          msg_text = BGP.ParseBgpUpdate(update,
-                                        length,
-                                        rfc4893_updates=rfc4893_updates,
-                                        verbose=verbose_flag)
+          msg_text += "".join(BGP.ParseBgpUpdate(update,
+                                                 length,
+                                                 rfc4893_updates=rfc4893_updates,
+                                                 verbose=verbose_flag))
         except Exception, esc:  # pylint: disable-msg=W0703
-          print "Exception during ParseBgpUpdate: %s" % str(esc)
+          msg_text += "Exception during ParseBgpUpdate: %s\n" % str(esc)
 
       # Statistics Report
       # draft-ietf-grow-bmp-01.txt section 2.2
       #
       elif msg_type == BMP.MSG_TYPE_STATISTICS_REPORT:
-        msg_text = CollectBmpStatsMsg(conn)
+        msg_text += "".join(CollectBmpStatsMsg(conn))
 
       # Peer Down message
       # draft-ietf-grow-bmp-01.txt section 2.3
       #
       elif msg_type == BMP.MSG_TYPE_PEER_DOWN_NOTIFICATION:
-        msg_text = CollectBmpPeerDown(conn, verbose=verbose_flag)
+        msg_text += "".join(CollectBmpPeerDown(conn, verbose=verbose_flag))
 
       # else we don't know the type, we can't parse any more; raise
       # a ValueError exception if we're debugging, else just squawk
@@ -376,12 +387,23 @@ def main(argv):
       elif DEBUG_FLAG:
         raise ValueError("unknown BMP message type %d" % msg_type)
       else:
-        msg_text = "unknown BMP message type %d\n" % msg_type
+        msg_text += "unknown BMP message type %d\n" % msg_type
+
+      if skip_updates is not 0:
+        skip_updates -= 1
+        continue
 
       # If there's anything to print, print.
       #
       if msg_text:
         print "".join(msg_text),
+
+      # if we're counting down, maybe done
+      #
+      if count_updates is not 0:
+        count_updates -= 1
+        if count_updates is 0:
+          return
 
 
 # Call main with args; if a file was opened, close it.
