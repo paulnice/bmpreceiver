@@ -65,6 +65,7 @@ ATTR_TYPE_ADVERTISER = 12
 ATTR_TYPE_RCID_PATH = 13
 ATTR_TYPE_MP_REACH_NLRI = 14
 ATTR_TYPE_MP_UNREACH_NLRI = 15
+ATTR_TYPE_EXTENDED_COMMUNITIES = 16
 ATTR_TYPE_AS4_PATH = 17
 ATTR_TYPE_AS4_AGGREGATOR = 18
 
@@ -83,6 +84,7 @@ ATTR_TYPE_STR = {ATTR_TYPE_ORIGIN: "ORIGIN",
                  ATTR_TYPE_RCID_PATH: "RCID_PATH",
                  ATTR_TYPE_MP_REACH_NLRI: "MP_REACH_NLRI",
                  ATTR_TYPE_MP_UNREACH_NLRI: "MP_UNREACH_NLRI",
+                 ATTR_TYPE_EXTENDED_COMMUNITIES: "EXTENDED_COMMUNITIES",
                  ATTR_TYPE_AS4_PATH: "AS4_PATH",
                  ATTR_TYPE_AS4_AGGREGATOR: "AS4_AGGREGATOR"}
 
@@ -170,9 +172,12 @@ AF_STR = {AF_IP: "IPv4",
 
 # Multiprotocol Subsequent Address Family Identifier (SAFI) per RFC2858.
 #
+MP_SAFI_UNICAST = 1
+MP_SAFI_MULTICAST = 2
 MP_SAFI_STR = {1: "unicast",
                2: "multicast",
-               3: "unicast+multicast"}
+               3: "unicast+multicast",
+               128: "MPLS labeled VPN-IPv6"}
 
 
 def BytesForPrefix(prefix_len):
@@ -191,6 +196,25 @@ def BytesForPrefix(prefix_len):
   if prefix_len < 0 or prefix_len > 128:
     raise ValueError("prefix_len %d is out of range" % prefix_len)
   return int(math.ceil(prefix_len / 8.0))
+
+
+def BytesForPrefixAndLabels(prefix_len):
+  """Determine # of octets required to hold a prefix of length per RFC4760.
+
+  Args:
+    prefix_len: length of the prefix in bits.
+
+  Returns:
+    An int indicating how many octets are used to hold the prefix.
+    An int indicating the number of labels.
+
+  Raises:
+    ValueError: indicates that prefix_len has an invalid value
+  """
+
+#  if prefix_len < 0 or prefix_len > 128:
+#    raise ValueError("prefix_len %d is out of range" % prefix_len)
+  return int(math.ceil(prefix_len / 8.0)), 0
 
 
 def BytesForSnpa(snpa_len):
@@ -390,6 +414,7 @@ def ParseBgpHeader(header, verbose=False):
   #
   except Exception, esc:
     if verbose:
+      print str(esc)
       print DumpHexString(header, 0, HEADER_LEN)
     raise esc
 
@@ -424,7 +449,6 @@ def ParseBgpMpAttr(update, start, end, has_snpa):
                                 update[offset:offset+16])
   else:
     next_hop = "unknown for afi %d" % afi
-  mpattr_text.append("NEXT_HOP %s\n" % next_hop)
 
   # Turn AFI, SAFI into text.
   #
@@ -470,7 +494,7 @@ def ParseBgpMpAttr(update, start, end, has_snpa):
 
   # Next section is NLRI information.
   #
-  nlri_text = ParseBgpNlri(update, offset, end, afi)
+  nlri_text = ParseBgpNlri(update, offset, end, afi, safi)
   for nlri_str in nlri_text:
     mpattr_text.append("mp_nlri %s\n" % nlri_str)
 
@@ -479,7 +503,7 @@ def ParseBgpMpAttr(update, start, end, has_snpa):
   return mpattr_text
 
 
-def ParseBgpNlri(update, start, end, afi, debug=False):
+def ParseBgpNlri(update, start, end, afi, safi, debug=False):
   """Parse BGP NLRI into text.
 
   Args:
@@ -507,47 +531,55 @@ def ParseBgpNlri(update, start, end, afi, debug=False):
     # update to represent it.
     #
     prefix_len = update[offset]
+    offset += 1
     if debug:
       print "prefix_len %d at %d" % (prefix_len, offset)
-    need_bytes = BytesForPrefix(prefix_len)
-    offset += 1
 
-    # Override AFI if it's AF_IP and we know that the number of octets
-    # necessary to hold the NLRI is more than is valid for AF_IP. This
-    # is done because it appears that JUNOS 9.5 sends AF_IP6 withdraws
-    # in the regular withdraw section of a BGP UPDATE message, rather
-    # than constructing an MP_UNREACH path attribute and putting the
-    # AF_IP6 withdraws there.
+    # punt on parsing all the weird forms of NLRI that are outside the
+    # window of AF_IP/AF_IP6 and unicast/multicast
     #
-    if (need_bytes > 4) and (afi == AF_IP):
-      if debug:
-        sys.stderr.write("".join(["ParseBgpNlri overriding AFI ",
-                                  " bytes needed for prefix length\n"]))
-      afi = AF_IP6
+    if (afi is AF_IP or afi is AF_IP6) and (safi is MP_SAFI_UNICAST or safi is MP_SAFI_MULTICAST):
+      need_bytes = BytesForPrefix(prefix_len)
+ 
+      # Override AFI if it's AF_IP and we know that the number of octets
+      # necessary to hold the NLRI is more than is valid for AF_IP. This
+      # is done because it appears that JUNOS 9.5 sends AF_IP6 withdraws
+      # in the regular withdraw section of a BGP UPDATE message, rather
+      # than constructing an MP_UNREACH path attribute and putting the
+      # AF_IP6 withdraws there.
+      #
+      if (need_bytes > 4) and (afi == AF_IP):
+        if debug:
+          sys.stderr.write("".join(["ParseBgpNlri overriding AFI ",
+                                    " bytes needed for prefix length\n"]))
+        afi = AF_IP6
+          
+      # Get a buffer of correct size for address family, and pick the
+      # right AFI for the socket library (which varies from platform to
+      # platform and does not correspond to the RFC1700 values for AFI).
+      #
+      if afi == AF_IP:
+        socket_afi = socket.AF_INET
+        prefix = array.array("B", [0] * 4)
+      elif afi == AF_IP6:
+        socket_afi = socket.AF_INET6
+        prefix = array.array("B", [0] * 16)
+      else:
+        raise ValueError("unexpected value %d for AFI" % afi)
+      
+      # Copy from update into buffer and advance pointer.
+      #
+      for x in range(need_bytes):
+        prefix[x] = update[x + offset]
+      offset += need_bytes
+          
+      # Convert to presentation.
+      #
+      nlri_text.append("%s/%d" % (socket.inet_ntop(socket_afi, prefix),
+                                  prefix_len))
 
-    # Get a buffer of correct size for address family, and pick the
-    # right AFI for the socket library (which varies from platform to
-    # platform and does not correspond to the RFC1700 values for AFI).
-    #
-    if afi == AF_IP:
-      socket_afi = socket.AF_INET
-      prefix = array.array("B", [0] * 4)
-    elif afi == AF_IP6:
-      socket_afi = socket.AF_INET6
-      prefix = array.array("B", [0] * 16)
     else:
-      raise ValueError("unexpected value %d for AFI" % afi)
-
-    # Copy from update into buffer and advance pointer.
-    #
-    for x in range(need_bytes):
-      prefix[x] = update[x + offset]
-    offset += need_bytes
-
-    # Convert to presentation.
-    #
-    nlri_text.append("%s/%d" % (socket.inet_ntop(socket_afi, prefix),
-                                prefix_len))
+      nlri_text.append("afi/safi %d/%d presentation tbd" % (afi, safi))
 
   return nlri_text
 
@@ -596,6 +628,29 @@ def ParseBgpNotification(notification, length, verbose=False):
 
   # Return the list of strings representing collected message.
   #
+  return print_msg
+
+
+def ParseBgpOpen(message, length):
+  """Parse a BGP OPEN message; see RFC1771.
+
+  Args:
+    message: the body of a BGP OPEN message.
+    length: the length of the message.
+
+  Returns:
+    A list of strings to print
+
+  Raises:
+    ValueError: an unexpected value was found in the message
+  """
+
+  print_msg = []
+  indent_str = indent.IndentLevel(indent.BGP_CONTENT_INDENT)
+  offset = 0
+
+  print_msg.append("%sbgp open parsing tbd\n" % indent_str)
+
   return print_msg
 
 
@@ -678,7 +733,8 @@ def ParseBgpUpdate(update, length, rfc4893_updates=False, verbose=False):
     withdrawn_text = ParseBgpNlri(update,
                                   offset,
                                   offset + withdrawn_route_len,
-                                  AF_IP)
+                                  AF_IP,
+                                  MP_SAFI_UNICAST)
     if withdrawn_text:
       prepend_str = "%swithdraw " % indent_str
       sep = "\n%s" % prepend_str
@@ -813,13 +869,14 @@ def ParseBgpUpdate(update, length, rfc4893_updates=False, verbose=False):
     #
     elif attr_type == ATTR_TYPE_MP_REACH_NLRI:
       print_msg.append("%s%s\n" % (indent_str, ATTR_TYPE_STR[attr_type]))
+      mpattr_text = []
       try:
         mpattr_text = ParseBgpMpAttr(update, offset, offset + attr_len, True)
       except Exception, esc:
-        print "".join(print_msg),
-        for x in range(offset, offset + attr_len):
-          print " %02x" % update[x],
-        raise esc
+        if verbose:
+          print "".join(print_msg),
+          for x in range(offset, offset + attr_len):
+            print " %02x" % update[x],
       mp_indent = indent.IndentLevel(indent.BGP_MPATTR_INDENT)
       for mpattr in mpattr_text:
         print_msg.append("%s%s" % (mp_indent, mpattr))
@@ -840,8 +897,8 @@ def ParseBgpUpdate(update, length, rfc4893_updates=False, verbose=False):
     elif attr_type in ATTR_TYPE_STR:
       print_msg.append("%s%s\n" % (indent_str, ATTR_TYPE_STR[attr_type]))
     else:
-      print_msg.append("%sBGP path attrbute type %d\n" % (indent_str,
-                                                          attr_type))
+      print_msg.append("%sBGP path attribute type %d\n" % (indent_str,
+                                                           attr_type))
 
     # adjust the offset past the path attributes
     #
@@ -852,7 +909,7 @@ def ParseBgpUpdate(update, length, rfc4893_updates=False, verbose=False):
   #
   if verbose:
     print_msg.append("%sNLRI portion of update at %d\n" % (indent_str, offset))
-  nlri_text = ParseBgpNlri(update, offset, length, AF_IP)
+  nlri_text = ParseBgpNlri(update, offset, length, AF_IP, MP_SAFI_UNICAST)
   if nlri_text:
     prepend_str = "%snlri " % indent_str
     sep = "\n%s" % prepend_str

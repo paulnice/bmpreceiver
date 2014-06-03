@@ -1,34 +1,59 @@
-BMP Reciever
+BMP Receiver
 
 This is a Python implementation of the BMP protocol, as a receiver.
+
+So far, it handles BMP versions 1 and 3. The objective is to provide
+a working example of how to parse BMP protocol messages. Performance
+and exhaustive logging are not goals.
+
+There is a lot about BGP that it doesn't understand, MP_REACH_NLRI is
+a particularly good example. Patches are welcome.
+
+The version 1 code was written against test files generated from an
+implementation of draft-ietf-grow-bmp-02 on a Juniper router. 
+
+The version 3 code was written against a test file generated from an
+implementation of draft-ietf-grow-bmp-07 on a Cisco router. 
+
+If you run this code and get assertion failures, please generate a
+test file that reproduces the assertion and send it to the author.
 
 Code:
 
 bmp-receiver.py	- the receiver code
 BGP.py		- constants and support functions for the BGP protocol
 BMP.py		- constants and support functions for the BMP protocol
+indent.py	- utility function for calculating indentation
 
 Documentation:
 
-COPYING.txt
-README.txt
+COPYING
+README
 
 Relevant RFCs and I-Ds:
 
 draft-ietf-grow-bmp-01.txt
-draft-ietf-grow-bmp-02.txt
+draft-ietf-grow-bmp-03.txt
+draft-ietf-grow-bmp-04.txt
+draft-ietf-grow-bmp-05.txt
+draft-ietf-grow-bmp-06.txt
+draft-ietf-grow-bmp-07.txt
 rfc1771.txt
 rfc1863.txt
 rfc1997.txt
 rfc2042.txt
 rfc2858.txt
+rfc2918.txt
+rfc3107.txt
 rfc4271.txt
+rfc4760.txt
 rfc4893.txt
+rfc6790.txt
 
 Test files: You can make test files suitable for feeding to
 bmp-receiver.py's "-f" switch to test that the receiver is working.
 The "nc" utility can be used to do this (assuming that 20000 is the
-port number configured on the Juniper):
+port number configured on the router):
 
     nc -l 20000 > testcase.bin
 

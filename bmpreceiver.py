@@ -62,6 +62,60 @@ RECORD_SESSION = None
 DEBUG_FLAG = 0
 
 
+def CollectBmpInitiation(sock, msg_length, verbose=False):
+  """Collect a BMP Initiation message.
+
+  Args:
+    sock: socket from which to read.
+
+  Returns:
+    A list of strings.
+
+  Raises:
+    ValueError: an unexpected value was found in the message
+  """
+
+  print_msg = []
+  indent_str = indent.IndentLevel(indent.BMP_CONTENT_INDENT)
+
+  # get the remainder of the message
+  #
+  init_msg_len = msg_length - BMP.HEADER_LEN_V3
+  init_msg_buf = CollectBytes(sock, init_msg_len)
+  init_msg_pos = 0
+
+  while init_msg_pos < init_msg_len:
+
+    info_type, info_len = struct.unpack_from(">HH", 
+                                             init_msg_buf, 
+                                             init_msg_pos)
+    init_msg_pos += 4
+    info_str = init_msg_buf[init_msg_pos:init_msg_pos + info_len]
+    init_msg_pos += info_len
+    
+    if info_type == BMP.INIT_INFO_TYPE_STRING:
+      print_msg.append("%s%s: %s\n" % (indent_str,
+                                       BMP.INIT_INFO_TYPE_STR[info_type],
+                                       info_str.tostring()))
+
+    elif info_type == BMP.INIT_INFO_TYPE_SYSDESCR:
+      print_msg.append("%s%s: %s\n" % (indent_str,
+                                       BMP.INIT_INFO_TYPE_STR[info_type],
+                                       info_str.tostring()))
+
+    elif info_type == BMP.INIT_INFO_TYPE_SYSNAME:
+      print_msg.append("%s%s: %s\n" % (indent_str,
+                                       BMP.INIT_INFO_TYPE_STR[info_type],
+                                       info_str.tostring()))
+
+    else:
+      raise ValueError("Found unexpected Init Msg Info Type %d", info_type)
+
+  # Return list of strings representing collected message.
+  #
+  return print_msg
+
+
 def CollectBmpPeerDown(sock, verbose=False):
   """Collect a BMP Peer Down message.
 
@@ -106,6 +160,64 @@ def CollectBmpPeerDown(sock, verbose=False):
     raise ValueError("Unknown BMP Peer Down reason %d" % reason_code)
   else:
     print_msg.append("Unknown BMP Peer Down reason %d\n" % reason_code)
+
+  # Return list of strings representing collected message.
+  #
+  return print_msg
+
+
+def CollectBmpPeerUp(sock, verbose=False):
+  """Collect a BMP Peer Up message.
+
+  Args:
+    sock: socket from which to read.
+    verbose: be chatty, or not.
+
+  Returns:
+    nothing
+
+  Raises:
+    ValueError: an unexpected value was found in the message
+  """
+
+  indent_str = indent.IndentLevel(indent.BMP_CONTENT_INDENT)
+  print_msg = []
+
+  # collect a per peer header
+  #
+  per_peer_header = CollectBytes(sock, BMP.PER_PEER_HEADER_LEN_V3)
+  peer_flags, msg_text = BMP.ParseBmpPerPeerHeaderV3(per_peer_header,
+                                                     verbose=verbose)
+  print_msg += "".join(msg_text)
+
+  # collect local address, local and remote ports
+  #
+  peer_up_msg = CollectBytes(sock, BMP.PEER_UP_LEN)
+  if verbose:
+    msg_text = BMP.ParseBmpPeerUp(peer_up_msg, peer_flags, verbose=verbose)
+    print_msg += "".join(msg_text)
+
+  # sent BGP OPEN message
+  #
+  sent_header = CollectBytes(sock, BGP.HEADER_LEN)
+  length, msg_type, hdr_text = BGP.ParseBgpHeader(sent_header,
+                                                  verbose=verbose)
+  assert msg_type == BGP.OPEN
+  print_msg += "".join(hdr_text)
+  sent_open = CollectBytes(sock, length)
+  sent_text = BGP.ParseBgpOpen(sent_open, length)
+  print_msg += "".join(sent_text)
+
+  # received BGP OPEN message
+  #
+  recv_header = CollectBytes(sock, BGP.HEADER_LEN)
+  length, msg_type, hdr_text = BGP.ParseBgpHeader(recv_header,
+                                                  verbose=verbose)
+  assert msg_type == BGP.OPEN
+  print_msg += "".join(hdr_text)
+  recv_open = CollectBytes(sock, length)
+  recv_text = BGP.ParseBgpOpen(recv_open, length)
+  print_msg += "".join(recv_text)
 
   # Return list of strings representing collected message.
   #
@@ -194,7 +306,7 @@ def CollectBytes(sock, length):
       sock.close()
       sys.exit(0)
     if DEBUG_FLAG:
-      print "READ %d BYTES FROM FILE" % len(buf)
+      print "\nREAD %d BYTES FROM FILE" % len(buf)
       for x in range(length):
         print " %02x" % buf[x],
 
@@ -336,11 +448,28 @@ def main(argv):
     #
     while True:
 
-      # Read a BMP header.
+      msg_text = []
+
+      # Read a BMP header. First get the version number, and use it to
+      # figure out the rest of what to do
       #
-      header = CollectBytes(conn, BMP.HEADER_LEN)
-      msg_type, tmp_text = BMP.ParseBmpHeader(header, verbose=verbose_flag)
-      msg_text = "".join(tmp_text)
+      temp = CollectBytes(conn, 1)
+      bmp_version = temp[0]
+      msg_length = 0
+
+      # Process the rest of the header information based on the BMP version
+      #
+      if bmp_version == 1:
+        header = CollectBytes(conn, BMP.HEADER_LEN_V1 - 1)
+        msg_type, tmp_text = BMP.ParseBmpHeaderV1(header, verbose=verbose_flag)
+      elif bmp_version == 3:
+        header = CollectBytes(conn, BMP.HEADER_LEN_V3 - 1)
+        msg_type, msg_length, tmp_text = BMP.ParseBmpHeaderV3(header, 
+                                                              verbose=verbose_flag)
+      else:
+        print "Version %d out of range" % bmp_version
+        sys.exit(3)
+      msg_text += "".join(tmp_text)
 
       # Process the specific type of BMP message
       #
@@ -349,6 +478,14 @@ def main(argv):
       # The body of the message is a BGP UPDATE.
       #
       if msg_type == BMP.MSG_TYPE_ROUTE_MONITORING:
+
+        # if version 3, collect a per peer header
+        #
+        if bmp_version == 3:
+          per_peer_header = CollectBytes(conn, BMP.PER_PEER_HEADER_LEN_V3)
+          peer_flags, peer_text = BMP.ParseBmpPerPeerHeaderV3(per_peer_header, 
+                                                              verbose_flag)
+          msg_text += "".join(peer_text)
 
         # Collect and parse the BGP message header.
         #
@@ -367,7 +504,7 @@ def main(argv):
                                                  rfc4893_updates=rfc4893_updates,
                                                  verbose=verbose_flag))
         except Exception, esc:  # pylint: disable-msg=W0703
-          msg_text += "Exception during ParseBgpUpdate: %s\n" % str(esc)
+          print "Exception during ParseBgpUpdate: %s\n" % str(esc)
 
       # Statistics Report
       # draft-ietf-grow-bmp-01.txt section 2.2
@@ -380,6 +517,28 @@ def main(argv):
       #
       elif msg_type == BMP.MSG_TYPE_PEER_DOWN_NOTIFICATION:
         msg_text += "".join(CollectBmpPeerDown(conn, verbose=verbose_flag))
+
+      # Peer Up message
+      # draft-ietf-grow-bmp-07.txt section 4.8
+      #
+      elif msg_type == BMP.MSG_TYPE_PEER_UP_NOTIFICATION:
+        msg_text += "".join(CollectBmpPeerUp(conn, verbose=verbose_flag))
+
+      # Initiation message
+      # draft-ietf-grow-bmp-07.txt section 4.3
+      #
+      elif msg_type == BMP.MSG_TYPE_INITIATION_MESSAGE:
+        msg_text += "".join(CollectBmpInitiation(conn, 
+                                                 msg_length, 
+                                                 verbose=verbose_flag))
+
+      # Termination message
+      # draft-ietf-grow-bmp-07.txt section 4.4
+      #
+      elif msg_type == BMP.MSG_TYPE_TERMINATION_MESSAGE:
+        msg_text += "".join(CollectBmpTermination(conn, 
+                                                  msg_length, 
+                                                  verbose=verbose_flag))
 
       # else we don't know the type, we can't parse any more; raise
       # a ValueError exception if we're debugging, else just squawk
