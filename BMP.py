@@ -24,6 +24,7 @@ import socket
 import struct
 import time
 import indent
+import re
 
 # The length of the version field that starts every BMP message.
 #
@@ -243,7 +244,7 @@ def ParseBmpPerPeerHeaderV3(header, verbose=False):
   #
   peer_type, peer_flags = struct.unpack_from(">BB", header, offset)
   offset += 2
-  peer_dist = struct.unpack_from("xxxxxxxx", header, offset)
+  peer_dist = struct.unpack_from("8B", header, offset)
   offset += 8
   if peer_flags & PEER_FLAG_IPV6:
     peer_address = socket.inet_ntop(socket.AF_INET6, 
@@ -264,6 +265,11 @@ def ParseBmpPerPeerHeaderV3(header, verbose=False):
                     peer_flags,
                     peer_address,
                     peer_as))
+  time_str = time.strftime("%Y-%m-%d %H:%M", time.gmtime(time_sec))
+  time_frac = time_usec / 1000000.0
+  
+  print_msg.append("%sTime %s.%s\n" % 
+                   (indent_str, time_str, re.split('\.', str(time_frac))[1]))
 
   # Return the message type so the caller can decide what to do next,
   # and the list of strings representing the collected message.
