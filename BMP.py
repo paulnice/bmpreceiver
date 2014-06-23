@@ -86,7 +86,11 @@ SR_TYPE_STR = {0: "prefixes rejected by inbound policy",
                1: "(known) duplicate prefix advertisements",
                2: "(known) duplicate withdraws",
                3: "updates invalidated due to CLUSTER_LIST loop",
-               4: "updates invalidated due to AS_PATH loop"}
+               4: "updates invalidated due to AS_PATH loop",
+               5: "updates invalidated due to ORIGINATOR_ID",
+               6: "updates invalidated due to AS_CONFED loop",
+               7: "routes in Adj-RIBs-In",
+               8: "routes in Loc-RIB"}
 
 # Peer down reason codes.
 #

@@ -251,12 +251,16 @@ def CollectBmpStatsMsg(sock):
     stat_type_len_buf = CollectBytes(sock, 4)
     stat_type, stat_len = struct.unpack(">HH", stat_type_len_buf)
 
-    # All the values in the spec so far are type long, length == 4.
+    # Stat types through 6 are 32 bits, 7 and 8 are 64
     #
     assert stat_type in BMP.SR_TYPE_STR
-    assert stat_len == 4
     stat_val_buf = CollectBytes(sock, stat_len)
-    stat_val = struct.unpack(">L", stat_val_buf)[0]
+    if stat_len is 4:
+      stat_val = struct.unpack(">L", stat_val_buf)[0]
+    elif stat_len is 8:
+      stat_val = struct.unpack(">Q", stat_val_buf)[0]
+    else:
+      raise ValueError("Found unexpected stat_len %d in SR message", stat_len)
     print_msg.append("%s%d %s\n" % (indent_str,
                                     stat_val,
                                     BMP.SR_TYPE_STR[stat_type]))
@@ -510,6 +514,17 @@ def main(argv):
       # draft-ietf-grow-bmp-01.txt section 2.2
       #
       elif msg_type == BMP.MSG_TYPE_STATISTICS_REPORT:
+
+        # if version 3, collect a per peer header
+        #
+        if bmp_version == 3:
+          per_peer_header = CollectBytes(conn, BMP.PER_PEER_HEADER_LEN_V3)
+          peer_flags, peer_text = BMP.ParseBmpPerPeerHeaderV3(per_peer_header, 
+                                                              verbose_flag)
+          msg_text += "".join(peer_text)
+
+        # collect the SR message
+        #
         msg_text += "".join(CollectBmpStatsMsg(conn))
 
       # Peer Down message
