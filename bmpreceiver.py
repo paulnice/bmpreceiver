@@ -115,6 +115,55 @@ def CollectBmpInitiation(sock, msg_length, verbose=False):
   #
   return print_msg
 
+def CollectBmpTermination(sock, msg_length, verbose=False):
+  """Collect a BMP Termination message.
+
+  Args:
+    sock: socket from which to read.
+
+  Returns:
+    A list of strings.
+
+  Raises:
+    ValueError: an unexpected value was found in the message
+  """
+
+  print_msg = []
+  indent_str = indent.IndentLevel(indent.BMP_CONTENT_INDENT)
+
+  # get the remainder of the message
+  #
+  term_msg_len = msg_length - BMP.HEADER_LEN_V3
+  term_msg_buf = CollectBytes(sock, term_msg_len)
+  term_msg_pos = 0
+
+  while term_msg_pos < term_msg_len:
+
+    info_type, info_len = struct.unpack_from(">HH", 
+                                             term_msg_buf, 
+                                             term_msg_pos)
+    term_msg_pos += 4
+    info_str = term_msg_buf[term_msg_pos:term_msg_pos + info_len]
+    term_msg_pos += info_len
+
+    if info_type == BMP.TERM_INFO_TYPE_STRING:
+      print_msg.append("%s%s: %s\n" % (indent_str,
+                                       BMP.TERM_INFO_TYPE_STR[info_type],
+                                       info_str.tostring()))
+
+    elif info_type == BMP.TERM_INFO_TYPE_REASON:
+      reason_code = struct.unpack(">H", info_str)[0]
+      print_msg.append("%s%s: %d (%s)\n" % (indent_str,
+                                            BMP.TERM_INFO_TYPE_STR[info_type],
+                                            reason_code,
+                                            BMP.TERM_INFO_REASON_STR[reason_code]))
+
+    else:
+      raise ValueError("Found unexpected Init Msg Info Type %d", info_type)
+
+  # Return list of strings representing collected message.
+  #
+  return print_msg
 
 def CollectBmpPeerDown(sock, verbose=False):
   """Collect a BMP Peer Down message.

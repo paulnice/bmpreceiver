@@ -69,6 +69,21 @@ INIT_INFO_TYPE_STR = {INIT_INFO_TYPE_STRING: "String",
                       INIT_INFO_TYPE_SYSDESCR: "sysDescr",
                       INIT_INFO_TYPE_SYSNAME: "sysName"}
 
+# Termination message information types
+#
+TERM_INFO_TYPE_STRING = 0
+TERM_INFO_TYPE_REASON = 1
+TERM_INFO_TYPE_STR = {TERM_INFO_TYPE_STRING: "String",
+                      TERM_INFO_TYPE_REASON: "Reason"}
+TERM_INFO_REASON_ADMIN_DOWN = 0
+TERM_INFO_REASON_UNSPEC = 1
+TERM_INFO_REASON_OUT_OF_RESOURCE = 2
+TERM_INFO_REASON_REDUNDANT_CONNECTION = 3
+TERM_INFO_REASON_STR = {TERM_INFO_REASON_ADMIN_DOWN: "Admin Down",
+                        TERM_INFO_REASON_UNSPEC: "Unspecified Reason",
+                        TERM_INFO_REASON_OUT_OF_RESOURCE: "Out of Resource",
+                        TERM_INFO_REASON_REDUNDANT_CONNECTION: "Redundant Connection"}
+
 # Peer types.
 #
 PEER_TYPE_GLOBAL = 0
